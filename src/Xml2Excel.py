@@ -59,8 +59,13 @@ def parse_xml_file(path, allowed_path):
     tree = etree.parse(path)
     root = tree.getroot()
     root_tag = etree.QName(root).localname
-    rows = flatten_xml(root, allowed_path, root_tag)
-    rows["_source_file"] = path  # полезно для отладки
+    rows = []
+    for node in root.xpath("*"):
+        node_tag = etree.QName(node).localname
+        row = flatten_xml(node, allowed_path, f"{root_tag}/{node_tag}")
+        if row:
+            row["_source_file"] = path  # полезно для отладки
+            rows.append(row)
     return rows
 
 import pandas as pd
@@ -153,8 +158,10 @@ class XmlToExcelApp(QWidget):
                 collect_checked_paths(top_item, "", checked_paths)
 
             rows = parse_multiple_xml(self.files, checked_paths)
-            print(f"Rows: {rows}")
             df = pd.DataFrame(rows)
+            for row in rows:
+                print(f"Row {row}")
+            print(f"df: {df}")
 
             export_to_excel(df, output)
             QMessageBox.information(self, "Готово", "Экспорт завершён")
