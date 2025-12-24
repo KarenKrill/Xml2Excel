@@ -54,14 +54,6 @@ def build_merged_tree(xml_files):
 
     return root
 
-def collect_namespaces(root):
-    namespaces = set()
-    for elem in root.iter():
-        ns = etree.QName(elem).namespace
-        if ns:
-            namespaces.add(ns)
-    return namespaces
-
 def parse_xml_file(path, allowed_path):
     tree = etree.parse(path)
     root = tree.getroot()
