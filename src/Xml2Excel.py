@@ -83,7 +83,7 @@ def export_to_excel(df, output_path):
 
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QPushButton,
-    QListWidget, QFileDialog, QLineEdit, QLabel, QMessageBox,
+    QListWidget, QFileDialog, QMessageBox,
     QTreeWidget, QTreeWidgetItem
 )
 class XmlToExcelApp(QWidget):
@@ -105,16 +105,11 @@ class XmlToExcelApp(QWidget):
 
         self.list_files = QListWidget()
 
-        self.xpath_label = QLabel("XPath узла-строки:")
-        self.xpath_input = QLineEdit(".//*")
-
         self.btn_export = QPushButton("Экспорт в Excel")
         self.btn_export.clicked.connect(self.export)
 
         layout.addWidget(self.btn_select)
         layout.addWidget(self.tree)
-        layout.addWidget(self.xpath_label)
-        layout.addWidget(self.xpath_input)
         layout.addWidget(self.btn_export)
 
     def select_files(self):
@@ -148,11 +143,6 @@ class XmlToExcelApp(QWidget):
             QMessageBox.warning(self, "Ошибка", "Файлы не выбраны")
             return
 
-        xpath = self.xpath_input.text().strip()
-        if not xpath:
-            QMessageBox.warning(self, "Ошибка", "XPath не задан")
-            return
-
         output, _ = QFileDialog.getSaveFileName(
             self,
             "Сохранить Excel",
@@ -163,6 +153,7 @@ class XmlToExcelApp(QWidget):
         if not output:
             return
 
+        xpath = ".//*"
         try:
             rows = parse_multiple_xml(self.files, xpath)
             df = pd.DataFrame(rows)
