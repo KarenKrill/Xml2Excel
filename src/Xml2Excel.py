@@ -92,10 +92,11 @@ from PyQt6.QtWidgets import (
     QListWidget, QFileDialog, QMessageBox,
     QTreeWidget, QTreeWidgetItem, QCheckBox
 )
+from PySide6.QtGui import QGuiApplication
 class XmlToExcelApp(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("XML → Excel")
+        self.setWindowTitle("Xml2Excel converter")
 
         self.files = []
 
@@ -202,6 +203,19 @@ class XmlToExcelApp(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", str(e))
 
+    def center_on_screen(self):
+        screen = QGuiApplication.primaryScreen()
+        if not screen:
+            return
+
+        screen_rect = screen.availableGeometry()
+        window_rect = self.frameGeometry()
+
+        x = screen_rect.center().x() - window_rect.width() // 2
+        y = screen_rect.center().y() - window_rect.height() // 2
+
+        self.move(x, y)
+
 from PyQt6.QtCore import Qt
 
 def update_children(item, state):
@@ -275,5 +289,7 @@ def collect_checked_paths(item, prefix="", result=None):
 import sys
 app = QApplication(sys.argv)
 window = XmlToExcelApp()
+window.adjustSize()
+window.center_on_screen()
 window.show()
 sys.exit(app.exec())
