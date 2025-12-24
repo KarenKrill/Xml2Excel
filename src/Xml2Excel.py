@@ -78,6 +78,15 @@ def parse_multiple_xml(files, allowed_path, ignore_empty=False):
 def export_to_excel(df, output_path):
     df.to_excel(output_path, index=False)
 
+import os
+def collect_xml_files(root_folder: str) -> list[str]:
+    xml_files = []
+    for root, _, files in os.walk(root_folder):
+        for filename in files:
+            if filename.lower().endswith(".xml"):
+                xml_files.append(os.path.join(root, filename))
+    return xml_files
+
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QPushButton,
     QListWidget, QFileDialog, QMessageBox,
@@ -94,6 +103,8 @@ class XmlToExcelApp(QWidget):
 
         self.btn_select = QPushButton("Выбрать XML-файлы")
         self.btn_select.clicked.connect(self.select_files)
+        self.select_folder_btn = QPushButton("Выбрать папку с XML-файлами")
+        self.select_folder_btn.clicked.connect(self.on_select_folder)
 
         self.ignore_empty_checkbox = QCheckBox("Игнорировать столбцы с пустыми ячейками")
         self.ignore_empty_checkbox.setChecked(True)
@@ -109,6 +120,7 @@ class XmlToExcelApp(QWidget):
         self.btn_export.clicked.connect(self.export)
 
         layout.addWidget(self.btn_select)
+        layout.addWidget(self.select_folder_btn)
         layout.addWidget(self.ignore_empty_checkbox)
         layout.addWidget(self.tree)
         layout.addWidget(self.btn_export)
@@ -120,11 +132,32 @@ class XmlToExcelApp(QWidget):
             "",
             "XML Files (*.xml)"
         )
+        self.on_files_selected(files)
+
+    def on_files_selected(self, files):
         self.files = files
         self.list_files.clear()
         self.list_files.addItems(files)
         merged_tree = build_merged_tree(files)
         populate_tree(self.tree, merged_tree)
+
+
+    def on_select_folder(self):
+        folder_path = QFileDialog.getExistingDirectory(
+            self,
+            "Выберите папку с XML-файлами",
+            ""
+        )
+        if not folder_path:
+            return
+
+        xml_files = collect_xml_files(folder_path)
+
+        if not xml_files:
+            QMessageBox.warning(self, "Предупреждение", "В выбранной папке нет XML-файлов")
+            return
+
+        self.on_files_selected(xml_files)
 
     def on_item_changed(self, item, column):
         # Игнорируем изменения без чекбокса
