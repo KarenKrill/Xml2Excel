@@ -19,6 +19,7 @@ def flatten_xml(element, allowed_path, parent_path="", result=None):
         else:
             if path in allowed_path:
                 result[path] = (child.text or "").strip()
+                print(f"{path}: {child.text}")
             else:
                 print(f"Path {path} is not allowed path")
 
@@ -35,22 +36,22 @@ class Node:
 # -------------------------------
 # XML utils
 # -------------------------------
-def extract_structure(elem, node):
-    for child in elem:
-        q = etree.QName(child)
+def extract_structure(parent, xml_node):
+
+    q = etree.QName(xml_node)
+    if q.localname:
         key = (q.namespace, q.localname)
-
-        if key not in node.children:
-            node.children[key] = Node(q.localname, q.namespace)
-
-        extract_structure(child, node.children[key])
+        if key not in parent.children:
+            parent.children[key] = Node(q.localname, q.namespace)
+        for xml_node_child in xml_node:
+            extract_structure(parent.children[key], xml_node_child)
 
 def build_merged_tree(xml_files):
     root = Node("ROOT")
 
     for path in xml_files:
         tree = etree.parse(path)
-        extract_structure(tree.getroot(), root)
+        extract_structure(root, tree.getroot())
 
     return root
 
@@ -151,9 +152,8 @@ class XmlToExcelApp(QWidget):
                 top_item = self.tree.topLevelItem(i)
                 collect_checked_paths(top_item, "", checked_paths)
 
-            print(f"Checked fields: {checked_paths}")
-
             rows = parse_multiple_xml(self.files, checked_paths)
+            print(f"Rows: {rows}")
             df = pd.DataFrame(rows)
 
             export_to_excel(df, output)
@@ -206,8 +206,6 @@ def populate_tree(widget, node):
 
 def add_item(parent, node):
     label = f'{node.name}'
-    if node.namespace:
-        label = f'{{{node.namespace}}}{node.name}'
     item = QTreeWidgetItem([label])
     item.setCheckState(0, Qt.CheckState.Unchecked)
     item.setData(0, Qt.ItemDataRole.UserRole, node)
