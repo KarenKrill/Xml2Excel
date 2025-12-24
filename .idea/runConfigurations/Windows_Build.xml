@@ -14,7 +14,7 @@
     <option name="ADD_SOURCE_ROOTS" value="true" />
     <option name="RUN_TOOL" value="" />
     <option name="SCRIPT_NAME" value=".venv/Scripts/pyinstaller.exe" />
-    <option name="PARAMETERS" value="--onefile --windowed --add-data &quot;AppIcon.ico;.&quot; --icon AppIcon.ico src/Xml2Excel.py" />
+    <option name="PARAMETERS" value="--onefile --windowed --add-data=&quot;AppIcon.ico;.&quot; --icon AppIcon.ico --version-file=version.txt src/Xml2Excel.py" />
     <option name="SHOW_COMMAND_LINE" value="false" />
     <option name="EMULATE_TERMINAL" value="false" />
     <option name="MODULE_MODE" value="false" />
