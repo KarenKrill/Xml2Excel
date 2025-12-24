@@ -91,10 +91,12 @@ from PyQt6.QtWidgets import (
     QListWidget, QFileDialog, QMessageBox,
     QTreeWidget, QTreeWidgetItem, QCheckBox
 )
+from PyQt6.QtGui import QIcon
 class XmlToExcelApp(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Xml2Excel converter")
+        self.setWindowIcon(QIcon(resource_path("AppIcon.ico")))
 
         self.files = []
 
@@ -284,8 +286,47 @@ def collect_checked_paths(item, prefix="", result=None):
 
     return result
 
+def resource_path(relative_path):
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
+
+def apply_dark_theme(application):
+    dark_stylesheet = """
+        QWidget {
+            background-color: #2b2b2b;
+            color: #f0f0f0;
+        }
+        QLineEdit, QTextEdit, QPlainTextEdit {
+            background-color: #3c3c3c;
+            color: #f0f0f0;
+        }
+        QPushButton {
+            background-color: #4b4b4b;
+            color: #f0f0f0;
+        }
+        QPushButton:hover {
+            background-color: #5c5c5c;
+        }
+        QTreeWidget {
+            background-color: #2b2b2b;
+            color: #f0f0f0;
+        }
+        QTreeWidget::item:selected {
+            background-color: #505050;
+        }
+        QHeaderView::section {
+            background-color: #3c3c3c;
+            color: #f0f0f0;
+            padding: 4px;
+            border: 1px solid #4b4b4b;
+        }
+    """
+    application.setStyleSheet(dark_stylesheet)
+
 import sys
 app = QApplication(sys.argv)
+apply_dark_theme(app)
 window = XmlToExcelApp()
 window.adjustSize()
 window.center_on_screen()
