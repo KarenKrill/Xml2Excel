@@ -63,7 +63,6 @@ def parse_xml_file(path, allowed_path, ignore_empty=False):
         node_tag = etree.QName(node).localname
         row = flatten_xml(node, allowed_path, f"{root_tag}/{node_tag}", None, ignore_empty)
         if row:
-            row["_source_file"] = path  # полезно для отладки
             rows.append(row)
     return rows
 
@@ -92,7 +91,6 @@ from PyQt6.QtWidgets import (
     QListWidget, QFileDialog, QMessageBox,
     QTreeWidget, QTreeWidgetItem, QCheckBox
 )
-from PySide6.QtGui import QGuiApplication
 class XmlToExcelApp(QWidget):
     def __init__(self):
         super().__init__()
@@ -204,7 +202,7 @@ class XmlToExcelApp(QWidget):
             QMessageBox.critical(self, "Ошибка", str(e))
 
     def center_on_screen(self):
-        screen = QGuiApplication.primaryScreen()
+        screen = QApplication.primaryScreen()
         if not screen:
             return
 
