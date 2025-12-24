@@ -19,7 +19,6 @@ def flatten_xml(element, allowed_path, parent_path="", result=None, ignore_empty
         else:
             if path in allowed_path and (ignore_empty is False or child.text):
                 result[path] = (child.text or "").strip()
-                print(f"{path}: {child.text}")
             else:
                 print(f"Path {path} is not allowed path")
 
