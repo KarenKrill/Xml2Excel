@@ -1,225 +1,246 @@
-import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
-from typing import Any
-
-import pandas as pd
 from lxml import etree
 
-# -------------------------------
-# Глобальные переменные
-# -------------------------------
-df: None = None
-checkbox_vars = {}
-check_all_var = None
-namespaces = {}
-current_xml_path = None
+def get_namespace(elem):
+    return etree.QName(elem).namespace
+def element_in_namespace(elem, target_ns):
+    return get_namespace(elem) == target_ns
 
+def flatten_xml(element, allowed_path, parent_path="", result=None, ignore_empty=False):
+    if result is None:
+        result = {}
+
+    for child in element:
+        name = etree.QName(child)
+        tag = name.localname
+        path = f"{parent_path}/{tag}" if parent_path else tag
+
+        if len(child):
+            flatten_xml(child, allowed_path, path, result, ignore_empty)
+        else:
+            if path in allowed_path and (ignore_empty is False or child.text):
+                result[path] = (child.text or "").strip()
+            else:
+                print(f"Path {path} is not allowed path")
+
+    return result
+
+class Node:
+    def __init__(self, name, namespace=None):
+        self.name = name
+        self.namespace = namespace
+        self.children = {}
+
+    def key(self):
+        return self.namespace, self.name
 # -------------------------------
 # XML utils
 # -------------------------------
-def extract_namespaces(xml_path):
-    ns_map = {}
-    for _, elem in etree.iterparse(xml_path, events=("start-ns",)):
-        prefix, uri = elem
-        prefix = prefix if prefix else "default"
-        ns_map[prefix] = uri
-    return ns_map
+def extract_structure(parent, xml_node):
 
+    q = etree.QName(xml_node)
+    if q.localname:
+        key = (q.namespace, q.localname)
+        if key not in parent.children:
+            parent.children[key] = Node(q.localname, q.namespace)
+        for xml_node_child in xml_node:
+            extract_structure(parent.children[key], xml_node_child)
 
-def load_xml_with_namespace(xml_path, ns_uri):
-    ns = {"ns": ns_uri} if ns_uri else None
-    return pd.read_xml(xml_path, namespaces=ns)
+def build_merged_tree(xml_files):
+    root = Node("ROOT")
 
+    for path in xml_files:
+        tree = etree.parse(path)
+        extract_structure(root, tree.getroot())
 
-# -------------------------------
-# GUI callbacks
-# -------------------------------
-def select_xml():
-    global df, namespaces, current_xml_path
+    return root
 
-    path = filedialog.askopenfilename(filetypes=[("XML files", "*.xml")])
-    if not path:
-        return
+def parse_xml_file(path, allowed_path, ignore_empty=False):
+    tree = etree.parse(path)
+    root = tree.getroot()
+    root_tag = etree.QName(root).localname
+    rows = []
+    for node in root.xpath("*"):
+        node_tag = etree.QName(node).localname
+        row = flatten_xml(node, allowed_path, f"{root_tag}/{node_tag}", None, ignore_empty)
+        if row:
+            row["_source_file"] = path  # полезно для отладки
+            rows.append(row)
+    return rows
 
-    try:
-        namespaces = extract_namespaces(path)
-        if not namespaces:
-            namespaces = {"(no namespace)": None}
-        
-        display_values = [
-            f'{k}: "{v}"' if v else k
-            for k, v in namespaces.items()
-        ]
+import pandas as pd
+def parse_multiple_xml(files, allowed_path, ignore_empty=False):
+    all_rows = []
+    for file in files:
+        rows = parse_xml_file(file, allowed_path, ignore_empty)
+        all_rows.extend(rows)
+    return all_rows
 
-        namespace_menu["values"] = display_values
-        namespace_menu.current(0)
+def export_to_excel(df, output_path):
+    df.to_excel(output_path, index=False)
 
-        current_xml_path = path
-        load_dataframe()
+from PyQt6.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QPushButton,
+    QListWidget, QFileDialog, QMessageBox,
+    QTreeWidget, QTreeWidgetItem, QCheckBox
+)
+class XmlToExcelApp(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("XML → Excel")
 
-    except Exception as e:
-        messagebox.showerror("Ошибка", str(e))
+        self.files = []
 
+        layout = QVBoxLayout(self)
 
-def load_dataframe():
-    global df
+        self.btn_select = QPushButton("Выбрать XML-файлы")
+        self.btn_select.clicked.connect(self.select_files)
 
-    try:
-        selected = namespace_menu.get()
+        self.ignore_empty_checkbox = QCheckBox("Игнорировать столбцы с пустыми ячейками")
+        self.ignore_empty_checkbox.setChecked(True)
 
-        if ':' in selected:
-            prefix = selected.split(':', 1)[0]
-        else:
-            prefix = selected
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabel("Узлы XML")
+        self.tree.itemChanged.connect(self.on_item_changed)
+        self.tree.setExpandsOnDoubleClick(True)
 
-        ns_uri = namespaces.get(prefix)
+        self.list_files = QListWidget()
 
-        df = load_xml_with_namespace(current_xml_path, ns_uri)
-        show_fields(df.columns)
+        self.btn_export = QPushButton("Экспорт в Excel")
+        self.btn_export.clicked.connect(self.export)
 
-    except Exception as e:
-        messagebox.showerror("Ошибка загрузки XML", str(e))
+        layout.addWidget(self.btn_select)
+        layout.addWidget(self.ignore_empty_checkbox)
+        layout.addWidget(self.tree)
+        layout.addWidget(self.btn_export)
 
+    def select_files(self):
+        files, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Выбор XML",
+            "",
+            "XML Files (*.xml)"
+        )
+        self.files = files
+        self.list_files.clear()
+        self.list_files.addItems(files)
+        merged_tree = build_merged_tree(files)
+        populate_tree(self.tree, merged_tree)
 
-def show_fields(columns):
-    for widget in fields_inner.winfo_children():
-        widget.destroy()
-
-    checkbox_vars.clear()
-
-    for col in columns:
-        var = tk.BooleanVar()
-        chk = tk.Checkbutton(fields_inner, text=col, variable=var, command=update_check_all_var)
-        chk.pack(anchor="w")
-        checkbox_vars[col] = var
-
-    update_check_all_var()
-        
-def select_all():
-    for var in checkbox_vars.values():
-        var.set(True)
-def deselect_all():
-    for var in checkbox_vars.values():
-        var.set(False)
-def on_check_all_var_updated():
-    if check_all_var.get():
-        select_all()
-    else:
-        deselect_all()
-def update_check_all_var():
-    if all(var.get() for var in checkbox_vars.values()):
-        check_all_var.set(True)
-    else:
-        check_all_var.set(False)
-
-def export_excel():
-    if df is None:
-            messagebox.showwarning("Внимание", "Сначала выберите XML-файл")
+    def on_item_changed(self, item, column):
+        # Игнорируем изменения без чекбокса
+        if column != 0:
             return
-            
-    selected: list[Any] = [c for c, v in checkbox_vars.items() if v.get()]
-    if not selected:
-        messagebox.showwarning("Внимание", "Выберите хотя бы одно поле")
+
+        state = item.checkState(0)
+        self.tree.blockSignals(True)
+        # 🔹 обновляем всех детей
+        update_children(item, state)
+        # 🔹 обновляем родителей
+        update_parent(item.parent())
+        self.tree.blockSignals(False)
+
+    def export(self):
+        if not self.files:
+            QMessageBox.warning(self, "Ошибка", "Файлы не выбраны")
+            return
+
+        output, _ = QFileDialog.getSaveFileName(
+            self,
+            "Сохранить Excel",
+            "",
+            "Excel (*.xlsx)"
+        )
+
+        if not output:
+            return
+
+        try:
+            checked_paths = set()
+            for i in range(self.tree.topLevelItemCount()):
+                top_item = self.tree.topLevelItem(i)
+                collect_checked_paths(top_item, "", checked_paths)
+
+            ignore_empty_fields = self.ignore_empty_checkbox.isChecked()
+            rows = parse_multiple_xml(self.files, checked_paths, ignore_empty_fields)
+            df = pd.DataFrame(rows)
+
+            export_to_excel(df, output)
+            QMessageBox.information(self, "Готово", "Экспорт завершён")
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", str(e))
+
+from PyQt6.QtCore import Qt
+
+def update_children(item, state):
+    for i in range(item.childCount()):
+        child = item.child(i)
+        child.setCheckState(0, state)
+        update_children(child, state)
+
+def update_parent(item):
+    if item is None:
         return
 
-    path = filedialog.asksaveasfilename(
-        defaultextension=".xlsx",
-        filetypes=[("Excel files", "*.xlsx")]
-    )
-    if not path:
-        return
-    
-    try:
-        df[selected].to_excel(path, index=False)
-    
-    except PermissionError:
-        messagebox.showerror(
-            "Нет доступа",
-            "Невозможно сохранить файл.\n\n"
-            "Возможные причины:\n"
-            "• файл уже открыт в Excel\n"
-            "• нет прав на запись в эту папку"
-        )
+    checked = 0
+    unchecked = 0
 
-    except FileNotFoundError:
-        messagebox.showerror(
-            "Ошибка пути",
-            "Указанный путь не существует."
-        )
+    for i in range(item.childCount()):
+        child_state = item.child(i).checkState(0)
+        if child_state == Qt.CheckState.Checked:
+            checked += 1
+        elif child_state == Qt.CheckState.Unchecked:
+            unchecked += 1
+        else:
+            # PartiallyChecked
+            checked += 1
+            unchecked += 1
 
-    except Exception as e:
-        messagebox.showerror(
-            "Неизвестная ошибка",
-            f"Произошла ошибка при экспорте:\n\n{e}"
-        )
-
+    if checked == item.childCount() and unchecked == 0:
+        item.setCheckState(0, Qt.CheckState.Checked)
+    elif unchecked == item.childCount() and checked == 0:
+        item.setCheckState(0, Qt.CheckState.Unchecked)
     else:
-        messagebox.showinfo("Готово", "Экспорт успешно завершён")
-    
-def center_window_auto(window, width, height):
-    window.update_idletasks()
+        item.setCheckState(0, Qt.CheckState.PartiallyChecked)
 
-    screen_width = window.winfo_screenwidth()
-    screen_height = window.winfo_screenheight()
+    # рекурсивно вверх
+    update_parent(item.parent())
 
-    x = (screen_width // 2) - (width // 2)
-    y = (screen_height // 2) - (height // 2)
+def populate_tree(widget, node):
+    widget.blockSignals(True)
+    widget.clear()
+    for child in node.children.values():
+        add_item(widget, child)
+    widget.blockSignals(False)
 
-    window.geometry(f"+{x}+{y}")
+def add_item(parent, node):
+    label = f'{node.name}'
+    item = QTreeWidgetItem([label])
+    item.setCheckState(0, Qt.CheckState.Unchecked)
+    item.setData(0, Qt.ItemDataRole.UserRole, node)
+    if isinstance(parent, QTreeWidgetItem):
+        parent.addChild(item)
+    else:
+        parent.addTopLevelItem(item)
+    for child in node.children.values():
+        add_item(item, child)
 
-try:
-    # -------------------------------
-    # GUI setup
-    # -------------------------------
-    root = tk.Tk()
-    root.title("XML → Excel")
-    center_window_auto(root, 500, 600)
+def collect_checked_paths(item, prefix="", result=None):
+    if result is None:
+        result = set()
 
-    # XML selection
-    tk.Button(root, text="Выбрать XML", command=select_xml).pack(pady=5)
+    node = item.data(0, Qt.ItemDataRole.UserRole)
+    path = f"{prefix}/{node.name}" if prefix else node.name
 
-    # Namespace selector
-    tk.Label(root, text="Namespace:").pack()
-    namespace_menu = tk.ttk.Combobox(root, state="readonly")
-    namespace_menu.pack(pady=5)
-    namespace_menu.bind("<<ComboboxSelected>>", lambda e: load_dataframe())
-    
-    # Frame для кнопок "Выбрать всё / Снять всё"
-    check_all_var = tk.BooleanVar()
-    control_frame = tk.Frame(root)
-    control_frame.pack(pady=10)
+    if item.checkState(0) == Qt.CheckState.Checked and item.childCount() == 0:
+        result.add(path)
 
-    chkAllButton = tk.Checkbutton(control_frame, text="Выбрать/убрать все", variable=check_all_var, command=on_check_all_var_updated)
-    chkAllButton.pack(anchor="w",side="left", padx=5)
-    
-    uncheck_all_var = tk.BooleanVar()
-    
-    # Scrollable fields area
-    fields_frame = tk.LabelFrame(root, text="Выберите поля для экспорта")
-    fields_frame.pack(fill="both", expand=True, padx=10, pady=10)
+    for i in range(item.childCount()):
+        collect_checked_paths(item.child(i), path, result)
 
-    canvas = tk.Canvas(fields_frame)
-    scrollbar = tk.Scrollbar(fields_frame, orient="vertical", command=canvas.yview)
-    canvas.configure(yscrollcommand=scrollbar.set)
+    return result
 
-    scrollbar.pack(side="right", fill="y")
-    canvas.pack(side="left", fill="both", expand=True)
-
-    fields_inner = tk.Frame(canvas, padx=15, pady=15)
-    canvas.create_window((0, 0), window=fields_inner, anchor="nw")
-
-    fields_inner.bind(
-        "<Configure>",
-        lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-    )
-
-    # Export button
-    tk.Button(root, text="Экспорт в Excel", command=export_excel).pack(pady=10)
-
-    root.mainloop()
-    
-except Exception as e:
-    messagebox.showerror(
-        "Неизвестная ошибка",
-        f"Произошла ошибка при работе программы:\n\n{e}"
-    )
+import sys
+app = QApplication(sys.argv)
+window = XmlToExcelApp()
+window.show()
+sys.exit(app.exec())
