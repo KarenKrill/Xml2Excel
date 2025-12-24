@@ -5,28 +5,19 @@ def get_namespace(elem):
 def element_in_namespace(elem, target_ns):
     return get_namespace(elem) == target_ns
 
-def flatten_xml(element, parent_path="", branch_root_ns=None, target_ns=None, result=None):
+def flatten_xml(element, parent_path="", result=None):
     if result is None:
         result = {}
 
     for child in element:
         name = etree.QName(child)
         tag = name.localname
-        child_ns = name.namespace
         path = f"{parent_path}/{tag}" if parent_path else tag
 
-        # 🔑 УСЛОВИЕ ФИЛЬТРАЦИИ
-        allowed = (
-                target_ns is None or
-                child_ns == target_ns or
-                branch_root_ns == target_ns
-        )
-
         if len(child):
-            flatten_xml(child, path, branch_root_ns, target_ns, result)
+            flatten_xml(child, path, result)
         else:
-            if allowed:
-                result[path] = (child.text or "").strip()
+            result[path] = (child.text or "").strip()
 
     return result
 
@@ -37,7 +28,7 @@ class Node:
         self.children = {}
 
     def key(self):
-        return (self.namespace, self.name)
+        return self.namespace, self.name
 # -------------------------------
 # XML utils
 # -------------------------------
@@ -68,29 +59,24 @@ def collect_namespaces(root):
             namespaces.add(ns)
     return namespaces
 
-def parse_xml_file(path, row_xpath, target_ns=None):
+def parse_xml_file(path, row_xpath):
     tree = etree.parse(path)
     root = tree.getroot()
-    namespaces = collect_namespaces(root)
     rows = []
     for node in root.xpath(row_xpath):
-        branch_root_ns = get_namespace(node)
-        row = flatten_xml(node, "", branch_root_ns, target_ns)
+        row = flatten_xml(node)
         row["_source_file"] = path  # полезно для отладки
         rows.append(row)
 
-    return rows, namespaces
+    return rows
 
 import pandas as pd
-def parse_multiple_xml(files, row_xpath, target_ns=None):
+def parse_multiple_xml(files, row_xpath):
     all_rows = []
-    all_namespaces = set()
     for file in files:
-        rows, namespaces = parse_xml_file(file, row_xpath, target_ns)
+        rows = parse_xml_file(file, row_xpath)
         all_rows.extend(rows)
-        all_namespaces.update(namespaces)
-
-    return all_rows, all_namespaces
+    return all_rows
 
 def export_to_excel(df, output_path):
     df.to_excel(output_path, index=False)
@@ -164,7 +150,7 @@ class XmlToExcelApp(QWidget):
             return
 
         try:
-            rows, namespaces = parse_multiple_xml(self.files, xpath)
+            rows = parse_multiple_xml(self.files, xpath)
             df = pd.DataFrame(rows)
 
             export_to_excel(df, output)
