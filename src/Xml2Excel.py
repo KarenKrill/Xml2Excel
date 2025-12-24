@@ -5,7 +5,7 @@ def get_namespace(elem):
 def element_in_namespace(elem, target_ns):
     return get_namespace(elem) == target_ns
 
-def flatten_xml(element, allowed_path, parent_path="", result=None):
+def flatten_xml(element, allowed_path, parent_path="", result=None, ignore_empty=False):
     if result is None:
         result = {}
 
@@ -15,9 +15,9 @@ def flatten_xml(element, allowed_path, parent_path="", result=None):
         path = f"{parent_path}/{tag}" if parent_path else tag
 
         if len(child):
-            flatten_xml(child, allowed_path, path, result)
+            flatten_xml(child, allowed_path, path, result, ignore_empty)
         else:
-            if path in allowed_path:
+            if path in allowed_path and (ignore_empty is False or child.text):
                 result[path] = (child.text or "").strip()
                 print(f"{path}: {child.text}")
             else:
@@ -55,24 +55,24 @@ def build_merged_tree(xml_files):
 
     return root
 
-def parse_xml_file(path, allowed_path):
+def parse_xml_file(path, allowed_path, ignore_empty=False):
     tree = etree.parse(path)
     root = tree.getroot()
     root_tag = etree.QName(root).localname
     rows = []
     for node in root.xpath("*"):
         node_tag = etree.QName(node).localname
-        row = flatten_xml(node, allowed_path, f"{root_tag}/{node_tag}")
+        row = flatten_xml(node, allowed_path, f"{root_tag}/{node_tag}", None, ignore_empty)
         if row:
             row["_source_file"] = path  # полезно для отладки
             rows.append(row)
     return rows
 
 import pandas as pd
-def parse_multiple_xml(files, allowed_path):
+def parse_multiple_xml(files, allowed_path, ignore_empty=False):
     all_rows = []
     for file in files:
-        rows = parse_xml_file(file, allowed_path)
+        rows = parse_xml_file(file, allowed_path, ignore_empty)
         all_rows.extend(rows)
     return all_rows
 
@@ -82,7 +82,7 @@ def export_to_excel(df, output_path):
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QPushButton,
     QListWidget, QFileDialog, QMessageBox,
-    QTreeWidget, QTreeWidgetItem
+    QTreeWidget, QTreeWidgetItem, QCheckBox
 )
 class XmlToExcelApp(QWidget):
     def __init__(self):
@@ -93,8 +93,11 @@ class XmlToExcelApp(QWidget):
 
         layout = QVBoxLayout(self)
 
-        self.btn_select = QPushButton("Выбрать XML файлы")
+        self.btn_select = QPushButton("Выбрать XML-файлы")
         self.btn_select.clicked.connect(self.select_files)
+
+        self.ignore_empty_checkbox = QCheckBox("Игнорировать столбцы с пустыми ячейками")
+        self.ignore_empty_checkbox.setChecked(True)
 
         self.tree = QTreeWidget()
         self.tree.setHeaderLabel("Узлы XML")
@@ -107,6 +110,7 @@ class XmlToExcelApp(QWidget):
         self.btn_export.clicked.connect(self.export)
 
         layout.addWidget(self.btn_select)
+        layout.addWidget(self.ignore_empty_checkbox)
         layout.addWidget(self.tree)
         layout.addWidget(self.btn_export)
 
@@ -157,11 +161,9 @@ class XmlToExcelApp(QWidget):
                 top_item = self.tree.topLevelItem(i)
                 collect_checked_paths(top_item, "", checked_paths)
 
-            rows = parse_multiple_xml(self.files, checked_paths)
+            ignore_empty_fields = self.ignore_empty_checkbox.isChecked()
+            rows = parse_multiple_xml(self.files, checked_paths, ignore_empty_fields)
             df = pd.DataFrame(rows)
-            for row in rows:
-                print(f"Row {row}")
-            print(f"df: {df}")
 
             export_to_excel(df, output)
             QMessageBox.information(self, "Готово", "Экспорт завершён")
