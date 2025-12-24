@@ -5,7 +5,7 @@ def get_namespace(elem):
 def element_in_namespace(elem, target_ns):
     return get_namespace(elem) == target_ns
 
-def flatten_xml(element, parent_path="", result=None):
+def flatten_xml(element, allowed_path, parent_path="", result=None):
     if result is None:
         result = {}
 
@@ -15,9 +15,12 @@ def flatten_xml(element, parent_path="", result=None):
         path = f"{parent_path}/{tag}" if parent_path else tag
 
         if len(child):
-            flatten_xml(child, path, result)
+            flatten_xml(child, allowed_path, path, result)
         else:
-            result[path] = (child.text or "").strip()
+            if path in allowed_path:
+                result[path] = (child.text or "").strip()
+            else:
+                print(f"Path {path} is not allowed path")
 
     return result
 
@@ -59,22 +62,19 @@ def collect_namespaces(root):
             namespaces.add(ns)
     return namespaces
 
-def parse_xml_file(path, row_xpath):
+def parse_xml_file(path, allowed_path):
     tree = etree.parse(path)
     root = tree.getroot()
-    rows = []
-    for node in root.xpath(row_xpath):
-        row = flatten_xml(node)
-        row["_source_file"] = path  # полезно для отладки
-        rows.append(row)
-
+    root_tag = etree.QName(root).localname
+    rows = flatten_xml(root, allowed_path, root_tag)
+    rows["_source_file"] = path  # полезно для отладки
     return rows
 
 import pandas as pd
-def parse_multiple_xml(files, row_xpath):
+def parse_multiple_xml(files, allowed_path):
     all_rows = []
     for file in files:
-        rows = parse_xml_file(file, row_xpath)
+        rows = parse_xml_file(file, allowed_path)
         all_rows.extend(rows)
     return all_rows
 
@@ -153,9 +153,15 @@ class XmlToExcelApp(QWidget):
         if not output:
             return
 
-        xpath = ".//*"
         try:
-            rows = parse_multiple_xml(self.files, xpath)
+            checked_paths = set()
+            for i in range(self.tree.topLevelItemCount()):
+                top_item = self.tree.topLevelItem(i)
+                collect_checked_paths(top_item, "", checked_paths)
+
+            print(f"Checked fields: {checked_paths}")
+
+            rows = parse_multiple_xml(self.files, checked_paths)
             df = pd.DataFrame(rows)
 
             export_to_excel(df, output)
@@ -222,13 +228,13 @@ def add_item(parent, node):
 
 def collect_checked_paths(item, prefix="", result=None):
     if result is None:
-        result = []
+        result = set()
 
     node = item.data(0, Qt.ItemDataRole.UserRole)
-    path = f"{prefix}.{node.name}" if prefix else node.name
+    path = f"{prefix}/{node.name}" if prefix else node.name
 
-    if item.checkState(0) == Qt.CheckState.Checked:
-        result.append(path)
+    if item.checkState(0) == Qt.CheckState.Checked and item.childCount() == 0:
+        result.add(path)
 
     for i in range(item.childCount()):
         collect_checked_paths(item.child(i), path, result)
