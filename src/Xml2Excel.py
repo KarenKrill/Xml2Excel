@@ -100,6 +100,7 @@ class XmlToExcelApp(QWidget):
 
         self.tree = QTreeWidget()
         self.tree.setHeaderLabel("Узлы XML")
+        self.tree.itemChanged.connect(self.on_item_changed)
         self.tree.setExpandsOnDoubleClick(True)
 
         self.list_files = QListWidget()
@@ -128,6 +129,19 @@ class XmlToExcelApp(QWidget):
         self.list_files.addItems(files)
         merged_tree = build_merged_tree(files)
         populate_tree(self.tree, merged_tree)
+
+    def on_item_changed(self, item, column):
+        # Игнорируем изменения без чекбокса
+        if column != 0:
+            return
+
+        state = item.checkState(0)
+        self.tree.blockSignals(True)
+        # 🔹 обновляем всех детей
+        update_children(item, state)
+        # 🔹 обновляем родителей
+        update_parent(item.parent())
+        self.tree.blockSignals(False)
 
     def export(self):
         if not self.files:
@@ -160,10 +174,46 @@ class XmlToExcelApp(QWidget):
 
 from PyQt6.QtCore import Qt
 
+def update_children(item, state):
+    for i in range(item.childCount()):
+        child = item.child(i)
+        child.setCheckState(0, state)
+        update_children(child, state)
+
+def update_parent(item):
+    if item is None:
+        return
+
+    checked = 0
+    unchecked = 0
+
+    for i in range(item.childCount()):
+        child_state = item.child(i).checkState(0)
+        if child_state == Qt.CheckState.Checked:
+            checked += 1
+        elif child_state == Qt.CheckState.Unchecked:
+            unchecked += 1
+        else:
+            # PartiallyChecked
+            checked += 1
+            unchecked += 1
+
+    if checked == item.childCount() and unchecked == 0:
+        item.setCheckState(0, Qt.CheckState.Checked)
+    elif unchecked == item.childCount() and checked == 0:
+        item.setCheckState(0, Qt.CheckState.Unchecked)
+    else:
+        item.setCheckState(0, Qt.CheckState.PartiallyChecked)
+
+    # рекурсивно вверх
+    update_parent(item.parent())
+
 def populate_tree(widget, node):
+    widget.blockSignals(True)
     widget.clear()
     for child in node.children.values():
         add_item(widget, child)
+    widget.blockSignals(False)
 
 def add_item(parent, node):
     label = f'{node.name}'
